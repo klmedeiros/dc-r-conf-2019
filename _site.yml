@@ -1,0 +1,32 @@
+name: Stack Overflow
+sidebar:
+  - text: North Star
+    icon: star
+    tabs:
+      - text: Questions Asked
+        module: 
+          page_metrics:
+            metrics:
+              - id: questions_northstar_nb_questions_asked
+                selected_period: week
+      - text: Average Questions Asked
+        module: 
+          page_metrics:
+            metrics:
+              - id: questions_northstar_avg_questions_asked
+                selected_period: week
+                zero: TRUE
+      - text: Percent of Users Active
+        module: 
+          page_metrics:
+            metrics:
+              - id: questions_northstar_pct_users_active
+                selected_period: week
+      - text: Number of Users
+        module: 
+          page_metrics:
+            metrics:
+              - id: questions_northstar_nb_active_users
+                selected_period: week
+              - id: questions_northstar_nb_users
+                selected_period: week

@@ -1,0 +1,129 @@
+---
+name: metrics_questions_northstar
+owner: kaelen
+metrics:
+  nb_active_users:
+    title: Number of Active Users
+    description: Number of users who have asked at least one question.
+  nb_questions_asked:
+    title: Number of Questions Asked
+    description: Total number of questions asked by active users.
+  avg_questions_asked:
+    title: Average Number of Questions Asked
+    description: Average number of questions asked by active users, calculated over all possible question tags.
+  nb_users:
+    title: Number of Users
+    description: Total number of users.
+  pct_users_active:
+    title: Percent Users Active
+    description: Percent of users active (asked at least one question) out of all users.
+dimensions:
+  tag:
+    title: Tag
+    description: None/dplyr/shiny/statistics/etc.
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(janitor)
+library(tidymetrics)
+library(lubridate)
+library(shinybones)
+```
+
+```{r import_data}
+answers_raw <- read_csv("Answers.csv") %>% clean_names()
+questions_raw <- read_csv("Questions.csv") %>% clean_names()
+tags_raw <- read_csv("Tags.csv") %>% clean_names()
+
+answers <- answers_raw %>% 
+  filter(!is.na(owner_user_id))
+
+tags <- tags_raw %>% 
+  filter(!is.na(tag)) %>% 
+  group_by(id) %>% 
+  mutate(row_number = row_number()) %>% 
+  filter(row_number == 1)
+
+questions <- questions_raw %>% 
+  filter(!is.na(owner_user_id)) %>% 
+  left_join(tags_raw, by = "id") %>% 
+  mutate(tag = replace_na(tag, "None")) %>% 
+  filter(tag %in% c("dplyr", "ggplot2", "shiny", "data.table", "regex", "python", "statistics", "package", "None"))
+```
+
+
+```{r params}
+PERIODS = c("day", "week", "month", "quarter")
+DATE_START = "2015-01-01"
+```
+
+Calculate number of users
+```{r users}
+# nb_users
+nb_users <- questions %>% 
+  filter(creation_date >= DATE_START) %>%
+  mutate(date = as.Date(creation_date)) %>% 
+  cross_by_periods(PERIODS) %>% 
+  cross_by_dimensions(tag) %>% 
+  summarize(nb_users = n_distinct(owner_user_id)) #actually randomize this to be something fake
+
+nb_users %>% 
+  filter(period == "quarter",
+         tag == "statistics") %>% 
+  ggplot(aes(date, nb_users)) +
+  geom_col()
+```
+
+Figure out engagement metrics
+```{r engagement}
+by_day_questions <- questions %>% 
+  filter(creation_date >= DATE_START) %>% 
+  mutate(date = as.Date(creation_date)) %>% 
+  group_by(date, owner_user_id, tag) %>% 
+  summarize(nb_questions_asked = n()) %>% 
+  ungroup()
+
+question_engagement_raw <- by_day_questions %>% 
+  cross_by_periods(PERIODS) %>% 
+  cross_by_dimensions(tag) %>% 
+  summarize(nb_active_users = n_distinct(owner_user_id),
+            nb_questions_asked = sum(nb_questions_asked, na.rm = TRUE)) %>% 
+  ungroup()
+
+nb_users_fake <- question_engagement_raw %>% 
+  group_by(period, date, tag) %>%  
+  mutate(nb_users = as.integer(runif(1, nb_active_users, nb_active_users * 4))) %>% 
+  select(period, date, tag, nb_users)
+
+active_users_any <- question_engagement_raw %>% 
+  filter(tag == "All") %>% 
+  select(period, date, 
+         nb_active_users_any_tag = nb_active_users)
+
+question_engagement <- question_engagement_raw %>% 
+  inner_join(active_users_any) %>% 
+  mutate(avg_questions_asked = nb_questions_asked / nb_active_users_any_tag) %>% 
+  inner_join(nb_users_fake) %>% 
+  mutate(pct_users_active = nb_active_users / nb_users) %>% 
+  select(-nb_active_users_any_tag) %>% 
+  group_by(period) %>% 
+  mutate(current_period = floor_date(today(), period[1])) %>% 
+  ungroup() %>% 
+  filter(date < current_period) %>% 
+  select(-current_period)
+
+```
+
+```{r create_metrics}
+question_metrics <- create_metrics(question_engagement)
+save_metrics(question_metrics, type="local")
+```
+
+```{r preview_metric, eval=FALSE}
+shinymetrics::preview_metric(question_metrics$questions_northstar_avg_questions_asked)
+```
+
+
